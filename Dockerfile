@@ -29,18 +29,18 @@ WORKDIR /app
 # Clone the TRELLIS.2 repository FIRST (into the empty /app directory)
 RUN git clone https://github.com/microsoft/TRELLIS.2.git .
 
-# Now copy and install requirements
+# Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install custom CUDA extensions (the core of TRELLIS.2)
-# We use the setup.sh script provided in the repo, but call it manually for better control
-RUN pip install ninja
-RUN pip install git+https://github.com/NVlabs/nvdiffrast.git
+# We set MAX_JOBS=2 to avoid memory exhaustion on GitHub Actions runners
+RUN pip install --no-cache-dir ninja
+ENV MAX_JOBS=2
 
-# Install FlexGEMM, CuMesh, O-Voxel etc.
-# These usually require building from source within the repo
-RUN ./setup.sh --basic --flash-attn --cumesh --o-voxel --flexgemm
+# Use the official setup script for all extensions
+# This script handles FlexGEMM, CuMesh, O-Voxel, nvdiffrast, and flash-attn
+RUN ./setup.sh --basic --flash-attn --cumesh --o-voxel --flexgemm --nvdiffrast
 
 # Final installation of the trellis package itself
 RUN pip install -e .
