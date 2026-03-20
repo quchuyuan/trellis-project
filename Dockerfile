@@ -26,12 +26,12 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Install Python requirements
+# Clone the TRELLIS.2 repository FIRST (into the empty /app directory)
+RUN git clone https://github.com/microsoft/TRELLIS.2.git .
+
+# Now copy and install requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Clone the TRELLIS.2 repository
-RUN git clone https://github.com/microsoft/TRELLIS.2.git .
 
 # Install custom CUDA extensions (the core of TRELLIS.2)
 # We use the setup.sh script provided in the repo, but call it manually for better control
