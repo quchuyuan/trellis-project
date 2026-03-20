@@ -6,7 +6,6 @@ transformers>=4.48.0
 accelerate
 diffusers>=0.31.0
 huggingface_hub
-huggingface-cli
 numpy
 pillow
 tqdm
