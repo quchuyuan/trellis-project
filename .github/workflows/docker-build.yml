@@ -26,4 +26,4 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/trellis2-runpod:latest
-          # 这一步会自动在 GitHub 的云服务器上完成所有编译并推送到 Docker Hub
+          # This process will automatically compile all CUDA kernels (FlexGEMM, CuMesh) on GitHub's cloud.
