@@ -1,6 +1,4 @@
 import os
-import subprocess
-import sys
 import torch
 import runpod
 import base64
@@ -9,37 +7,7 @@ from io import BytesIO
 import traceback
 import tempfile
 
-# --- Just-In-Time Extension Installation ---
-# This ensures compilation happens on the real GPU (RunPod) instead of GitHub Actions
-def setup_extensions():
-    if os.path.exists("/app/.extensions_ready"):
-        return
-    
-    print(">>> First-time setup: Building CUDA extensions on RunPod GPU...")
-    env = os.environ.copy()
-    env["MAX_JOBS"] = "4" # RunPod has plenty of CPU/Memory
-    
-    commands = [
-        ["pip", "install", "git+https://github.com/NVlabs/nvdiffrast.git"],
-        ["pip", "install", "flash-attn", "--no-build-isolation"],
-        ["pip", "install", "./extensions/flexgemm"],
-        ["pip", "install", "./extensions/cumesh"],
-        ["pip", "install", "./extensions/o-voxel"],
-        ["pip", "install", "-e", "."]
-    ]
-    
-    for cmd in commands:
-        print(f"Executing: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True, env=env)
-    
-    with open("/app/.extensions_ready", "w") as f:
-        f.write("ready")
-    print(">>> All extensions built and installed successfully!")
-
-# Ensure extensions are built before trying to import trellis
-setup_extensions()
-
-# Now it is safe to import
+# Import trellis (Must be built in Docker)
 from trellis.pipelines import Trellis2ImageTo3DPipeline
 from trellis.utils import postprocessing_utils
 
@@ -51,6 +19,7 @@ def get_pipeline():
     global pipeline
     if pipeline is None:
         print("Loading TRELLIS.2 pipeline...")
+        # Note: Ensure HF_TOKEN is set in RunPod env vars
         pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2")
         pipeline.to(device)
     return pipeline
