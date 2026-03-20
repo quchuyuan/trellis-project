@@ -1,26 +1,49 @@
 import os
-import base64
+import subprocess
+import sys
 import torch
 import runpod
-import tempfile
-import numpy as np
+import base64
 from PIL import Image
 from io import BytesIO
 import traceback
+import tempfile
 
-# Import TRELLIS components
-# These will be available after the Docker build installs the TRELLIS.2 repo
-try:
-    from trellis.pipelines import Trellis2ImageTo3DPipeline
-    from trellis.utils import postprocessing_utils
-except ImportError:
-    print("Warning: Trellis modules not found. Ensure they are installed in the Docker image.")
+# --- Just-In-Time Extension Installation ---
+# This ensures compilation happens on the real GPU (RunPod) instead of GitHub Actions
+def setup_extensions():
+    if os.path.exists("/app/.extensions_ready"):
+        return
+    
+    print(">>> First-time setup: Building CUDA extensions on RunPod GPU...")
+    env = os.environ.copy()
+    env["MAX_JOBS"] = "4" # RunPod has plenty of CPU/Memory
+    
+    commands = [
+        ["pip", "install", "git+https://github.com/NVlabs/nvdiffrast.git"],
+        ["pip", "install", "flash-attn", "--no-build-isolation"],
+        ["pip", "install", "./extensions/flexgemm"],
+        ["pip", "install", "./extensions/cumesh"],
+        ["pip", "install", "./extensions/o-voxel"],
+        ["pip", "install", "-e", "."]
+    ]
+    
+    for cmd in commands:
+        print(f"Executing: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True, env=env)
+    
+    with open("/app/.extensions_ready", "w") as f:
+        f.write("ready")
+    print(">>> All extensions built and installed successfully!")
+
+# Ensure extensions are built before trying to import trellis
+setup_extensions()
+
+# Now it is safe to import
+from trellis.pipelines import Trellis2ImageTo3DPipeline
+from trellis.utils import postprocessing_utils
 
 # --- Global Model Initialization ---
-# We load the model outside the handler to take advantage of RunPod worker persistence.
-# Note: Ensure you have granted access to gated models on Hugging Face (DINO v3, RMBG 2.0).
-# You can set the HUGGING_FACE_HUB_TOKEN as an environment variable in RunPod.
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pipeline = None
 
@@ -33,74 +56,43 @@ def get_pipeline():
     return pipeline
 
 def decode_image(image_input):
-    """
-    Decodes image from base64 string or loads from a URL.
-    """
     if image_input.startswith("http"):
         import requests
         response = requests.get(image_input)
         return Image.open(BytesIO(response.content)).convert("RGB")
     else:
-        # Handle potential data URI prefix
         if "," in image_input:
             image_input = image_input.split(",")[1]
         image_data = base64.b64decode(image_input)
         return Image.open(BytesIO(image_data)).convert("RGB")
 
 def handler(job):
-    """
-    The main handler function for RunPod Serverless.
-    """
     try:
         job_input = job['input']
-        
-        # 1. Input Validation
         image_input = job_input.get("image")
         if not image_input:
             return {"error": "Missing 'image' in input"}
             
         seed = job_input.get("seed", 42)
-        ss_sampling_steps = job_input.get("ss_sampling_steps", 25)
-        sl_sampling_steps = job_input.get("sl_sampling_steps", 10)
-        ss_guidance_strength = job_input.get("ss_guidance_strength", 7.5)
-        
-        # 2. Process Image
         image = decode_image(image_input)
         
-        # 3. Inference
         pipe = get_pipeline()
         torch.manual_seed(seed)
         
         print(f"Starting inference for job {job['id']}...")
-        # Trellis.2 pipeline call (based on example.py)
-        # Note: res refers to the internal resolution (e.g., 512, 1024)
-        outputs = pipe(
-            image,
-            num_samples=1,
-            seed=seed,
-            # Adjust parameters based on the specific version of TRELLIS.2
-            # These are typical for the flow-matching transformer
-        )
-        
-        # 4. Post-processing to GLB
-        # The output usually contains a list of objects (since num_samples can be > 1)
+        outputs = pipe(image, num_samples=1, seed=seed)
         output_asset = outputs[0]
         
         with tempfile.NamedTemporaryFile(suffix=".glb", delete=False) as temp_file:
             temp_path = temp_file.name
-            
-        # Extract mesh/textured asset
-        # TRELLIS.2 typically returns a structured object that can be converted to mesh
-        # We use the built-in utils to save as GLB
+        
         glb = postprocessing_utils.to_glb(output_asset)
         glb.export(temp_path)
         
-        # 5. Return Result
         with open(temp_path, "rb") as f:
             glb_data = f.read()
             glb_base64 = base64.b64encode(glb_data).decode("utf-8")
             
-        # Cleanup
         os.remove(temp_path)
         
         return {
@@ -110,13 +102,9 @@ def handler(job):
         }
 
     except Exception as e:
-        print(f"Error during processing: {str(e)}")
+        print(f"Error: {str(e)}")
         print(traceback.format_exc())
-        return {
-            "status": "error",
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
