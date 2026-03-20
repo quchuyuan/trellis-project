@@ -40,6 +40,7 @@ ENV MAX_JOBS=2
 
 # Use the official setup script for all extensions
 # This script handles FlexGEMM, CuMesh, O-Voxel, nvdiffrast, and flash-attn
+RUN chmod +x setup.sh
 RUN ./setup.sh --basic --flash-attn --cumesh --o-voxel --flexgemm --nvdiffrast
 
 # Final installation of the trellis package itself
