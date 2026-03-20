@@ -34,14 +34,26 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install custom CUDA extensions (the core of TRELLIS.2)
-# We set MAX_JOBS=2 to avoid memory exhaustion on GitHub Actions runners
-RUN pip install --no-cache-dir ninja
-ENV MAX_JOBS=2
+# Set critical environment variables for headless cloud compilation
+ENV MAX_JOBS=1
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
+ENV TCNN_CUDA_ARCHITECTURES="80;86;89;90"
 
-# Use the official setup script for all extensions
-# This script handles FlexGEMM, CuMesh, O-Voxel, nvdiffrast, and flash-attn
-RUN chmod +x setup.sh
-RUN ./setup.sh --basic --flash-attn --cumesh --o-voxel --flexgemm --nvdiffrast
+# Install ninja and high-performance extensions individually
+RUN pip install --no-cache-dir ninja
+
+# 1. Install nvdiffrast
+RUN pip install git+https://github.com/NVlabs/nvdiffrast.git
+
+# 2. Install flash-attn (This is the heaviest part, we use a pre-built wheel if possible or limit build)
+# Note: Compiling from source can take 30+ mins. 
+RUN pip install --no-cache-dir flash-attn --no-build-isolation
+
+# 3. Install TRELLIS internal extensions (from the cloned repo)
+# We manually run the pip installs that setup.sh would perform
+RUN pip install ./extensions/flexgemm
+RUN pip install ./extensions/cumesh
+RUN pip install ./extensions/o-voxel
 
 # Final installation of the trellis package itself
 RUN pip install -e .
