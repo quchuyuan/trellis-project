@@ -1,0 +1,5 @@
+FROM chuyuanqu/trellis2-runpod:latest
+
+COPY handler.py /app/handler.py
+
+CMD ["python", "-u", "/app/handler.py"]

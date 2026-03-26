@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+weights/
+extensions/
+test_image.png
+test_api.py
+build_local.sh

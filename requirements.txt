@@ -1,32 +1,20 @@
-# Core dependencies
-torch>=2.4.0
-torchvision
-torchaudio
-transformers>=4.48.0
 accelerate
 diffusers>=0.31.0
+ftfy
 huggingface_hub
+regex
+scikit-learn
+submitit
+termcolor
 numpy
-pillow
-tqdm
+Pillow
 scipy
-trimesh
-rembg[gpu,onnxruntime]
 einops
 omegaconf
 jaxtyping
+torchmetrics
 typeguard
-imageio
-imageio-ffmpeg
-ninja
 pyyaml
 rich
-
-# RunPod Serverless
 runpod
-
-# 3D and Graphics
-pysdf
-mcubes
-pyrender
-opencv-python
+requests

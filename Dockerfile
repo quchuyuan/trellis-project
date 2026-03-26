@@ -1,46 +1,78 @@
-# Use official PyTorch image with CUDA 12.4
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV CUDA_HOME=/usr/local/cuda-12.4
-ENV PATH="${CUDA_HOME}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    CUDA_HOME=/usr/local/cuda-12.8 \
+    PATH=/usr/local/cuda-12.8/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:${LD_LIBRARY_PATH} \
+    PYTHONPATH=/app \
+    DINOV3_REPO_PATH=/opt/repos/dinov3 \
+    DINOV3_WEIGHTS_PATH=/opt/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
+    MAX_JOBS=3 \
+    NVCC_THREADS=2 \
+    OPENCV_IO_ENABLE_OPENEXR=1 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# 关键：伪装成有显卡的环境进行编译，指定 RunPod 常用的架构 (8.0=A100, 8.6=3090/A6000, 8.9=4090, 9.0=H100)
-ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
-ENV MAX_JOBS=1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git build-essential libgl1-mesa-dev libglib2.0-0 \
-    libosmesa6-dev freeglut3-dev mesa-common-dev \
-    libegl1-mesa-dev libgles2-mesa-dev wget curl ninja-build \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    pkg-config \
+    ca-certificates \
+    curl \
+    wget \
+    ninja-build \
+    libgl1 \
+    libglib2.0-0 \
+    libjpeg-dev \
+    libgl1-mesa-dev \
+    libosmesa6-dev \
+    freeglut3-dev \
+    mesa-common-dev \
+    libegl1-mesa-dev \
+    libgles2-mesa-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 1. 先克隆仓库
-RUN git clone https://github.com/microsoft/TRELLIS.2.git .
+# Clone the official repository exactly once and build against its current layout.
+RUN git clone --recursive https://github.com/microsoft/TRELLIS.2.git .
+RUN git clone --depth 1 https://github.com/facebookresearch/dinov3.git /opt/repos/dinov3
 
-# 2. 安装 Python 基础依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN mkdir -p /opt/models/dinov3
 
-# 3. 安装 Flash-Attention (使用预编译版本，避免 GitHub Actions 编译失败)
-# 注意：这里选择匹配 torch 2.6 + cu124 的版本
-RUN pip install --no-cache-dir flash-attn --no-build-isolation
+# Keep local RunPod-only requirements separate from the official repo tree.
+COPY requirements.txt /tmp/requirements-runpod.txt
 
-# 4. 安装 nvdiffrast
-RUN pip install git+https://github.com/NVlabs/nvdiffrast.git
-
-# 5. 编译 TRELLIS 专属扩展 (这些比较小，MAX_JOBS=1 可以稳过)
-RUN pip install ./extensions/flexgemm
-RUN pip install ./extensions/cumesh
-RUN pip install ./extensions/o-voxel
-
-# 6. 安装主包
-RUN pip install -e .
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install \
+        imageio \
+        imageio-ffmpeg \
+        tqdm \
+        easydict \
+        opencv-python-headless \
+        ninja \
+        trimesh \
+        transformers \
+        tensorboard \
+        pandas \
+        lpips \
+        zstandard \
+        kornia \
+        timm && \
+    pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8 && \
+    pip install flash-attn==2.7.3 --no-build-isolation && \
+    mkdir -p /tmp/extensions && \
+    git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/extensions/nvdiffrast && \
+    pip install /tmp/extensions/nvdiffrast --no-build-isolation && \
+    git clone --recursive https://github.com/JeffreyXiang/CuMesh.git /tmp/extensions/CuMesh && \
+    pip install /tmp/extensions/CuMesh --no-build-isolation && \
+    git clone --recursive https://github.com/JeffreyXiang/FlexGEMM.git /tmp/extensions/FlexGEMM && \
+    pip install /tmp/extensions/FlexGEMM --no-build-isolation && \
+    cp -r /app/o-voxel /tmp/extensions/o-voxel && \
+    pip install /tmp/extensions/o-voxel --no-build-isolation && \
+    pip install -r /tmp/requirements-runpod.txt && \
+    rm -rf /tmp/extensions
 
 COPY handler.py /app/handler.py
 

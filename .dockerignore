@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+extensions
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+build_local.sh
+test_api.py
+test_image.png
